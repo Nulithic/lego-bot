@@ -38,11 +38,23 @@ class LEGOBot(commands.Bot):
         """Called when the bot is ready."""
         logger.info(f"{self.user} has logged in")
         try:
+            # Clear all global commands first to avoid duplicates
+            try:
+                self.tree.clear_commands(guild=None)
+                await self.tree.sync()  # Sync empty to clear global commands
+                logger.info("Cleared all global commands")
+            except Exception as e:
+                logger.warning(f"Could not clear global commands: {e}")
+            
             # Sync to all guilds (instant, no duplicates)
             synced_count = 0
             for guild in self.guilds:
                 try:
+                    # Clear existing guild commands first
+                    self.tree.clear_commands(guild=guild)
+                    # Copy commands to this guild
                     self.tree.copy_global_to(guild=guild)
+                    # Sync to this specific guild
                     synced = await self.tree.sync(guild=guild)
                     synced_count += len(synced)
                     logger.info(f"Synced {len(synced)} command(s) to guild {guild.name} ({guild.id})")
@@ -380,15 +392,27 @@ async def sync_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
+        # First, try to clear global commands (in case they exist)
+        try:
+            bot.tree.clear_commands(guild=None)
+            await bot.tree.sync()  # Sync empty to clear
+            logger.info("Cleared global commands before guild sync")
+        except Exception as clear_error:
+            logger.debug(f"Could not clear global commands (may not exist): {clear_error}")
+        
         # Clear any existing guild commands first to avoid duplicates
         bot.tree.clear_commands(guild=interaction.guild)
-        # Copy global commands to this guild
+        # Copy commands to this guild
         bot.tree.copy_global_to(guild=interaction.guild)
         # Sync to this specific guild (instant)
         synced = await bot.tree.sync(guild=interaction.guild)
         await interaction.followup.send(
             f"✅ Successfully synced {len(synced)} command(s) to this server!\n"
-            f"Commands should appear immediately. Try typing `/` to see them.",
+            f"Commands should appear immediately. Try typing `/` to see them.\n\n"
+            f"**If you still see duplicates:**\n"
+            f"1. Wait 5-10 minutes for Discord to clear cached global commands\n"
+            f"2. Restart Discord completely\n"
+            f"3. Or remove duplicates manually in Server Settings → Integrations → Your Bot",
             ephemeral=True
         )
         logger.info(f"Manually synced {len(synced)} command(s) to guild {interaction.guild.name} via sync-commands")
